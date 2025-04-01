@@ -1,6 +1,6 @@
 # 💧 Water Conservation Assistant
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://abdullah75f-water-saver-assistant-function-calling-app-pgozzl.streamlit.app/)
+Check it out the Streamlit url: [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://abdullah75f-water-saver-assistant-function-calling-app-pgozzl.streamlit.app/)
 
 An interactive web application built with Streamlit and powered by Google Gemini AI to generate, save, and listen to water conservation tips.
 
