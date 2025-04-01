@@ -1,4 +1,5 @@
-# Corrected Code - Final Version
+# app.py (Modified for multi-file saving)
+
 import streamlit as st
 import os
 import requests # Keep for potential future web interaction if needed, though not used now
@@ -39,19 +40,25 @@ st.set_page_config(
 )
 
 # --- Constants ---
-TIP_FILENAME = "water_conservation_tip_st.txt"
-AUDIO_FILENAME = "water_tip_audio_st.mp3"
+# REMOVE Single Filename Constants
+# TIP_FILENAME = "water_conservation_tip_st.txt"
+# AUDIO_FILENAME = "water_tip_audio_st.mp3"
 MODEL_NAME = 'gemini-1.5-flash-latest' # Define model name centrally
-# <<< --- ADD CURRENT_YEAR DEFINITION HERE --- >>>
 CURRENT_YEAR = datetime.datetime.now().year # Get current year for copyright
-# <<< --------------------------------------- >>>
+
+# --- ADD Directory Constants and Path ---
+APP_DIR = os.path.dirname(__file__) # Directory of app.py
+SAVED_TIPS_DIR_NAME = "saved_tips"
+SAVED_AUDIO_DIR_NAME = "saved_audio"
+SAVED_TIPS_DIR = os.path.join(APP_DIR, SAVED_TIPS_DIR_NAME)
+SAVED_AUDIO_DIR = os.path.join(APP_DIR, SAVED_AUDIO_DIR_NAME)
 
 
 # --- State Initialization ---
 # Use functions to avoid polluting global namespace and ensure init happens once
 def init_session_state():
     if 'current_tip' not in st.session_state: st.session_state.current_tip = ""
-    if 'audio_file_path' not in st.session_state: st.session_state.audio_file_path = None
+    if 'audio_file_path' not in st.session_state: st.session_state.audio_file_path = None # Still useful for immediate playback
     if 'processing_message' not in st.session_state: st.session_state.processing_message = ""
     if 'direct_ai_prompt' not in st.session_state: st.session_state.direct_ai_prompt = ""
     if 'gemini_model' not in st.session_state: st.session_state.gemini_model = None
@@ -111,18 +118,34 @@ init_session_state()
 if st.session_state.gemini_init_status == "pending":
     initialize_gemini() # This will set gemini_main_status_message
 
-# --- Core Functions --- (Identical to previous version)
+# --- Core Functions --- (MODIFIED)
 
-# Save to file
+def get_timestamp_str():
+    """Generates a sortable timestamp string."""
+    # Increased precision might help avoid rare collisions on fast systems
+    return datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+# Save to file (Modified for unique names and directory)
 def save_tip_to_file(tip_to_save: str) -> Tuple[bool, str]:
     if not tip_to_save or not isinstance(tip_to_save, str) or tip_to_save.startswith(("Error:", "Sorry,")):
         msg = "⚠️ Invalid tip provided. Cannot save."
         st.warning(msg)
         return False, msg
     try:
-        with open(TIP_FILENAME, "w", encoding='utf-8') as file:
+        # Ensure directory exists
+        os.makedirs(SAVED_TIPS_DIR, exist_ok=True)
+
+        # Generate unique filename
+        timestamp = get_timestamp_str()
+        filename = f"tip_{timestamp}.txt"
+        full_tip_path = os.path.join(SAVED_TIPS_DIR, filename)
+
+        # Save the file
+        with open(full_tip_path, "w", encoding='utf-8') as file:
             file.write(tip_to_save)
-        msg = f"✅ Tip saved successfully to '{TIP_FILENAME}'"
+
+        msg = f"✅ Tip saved successfully as '{filename}'" # Use new filename
+        logger.info(f"Saved tip to: {full_tip_path}")
         return True, msg
     except Exception as e:
         msg = f"🛑 Error saving tip to file: {e}"
@@ -131,21 +154,30 @@ def save_tip_to_file(tip_to_save: str) -> Tuple[bool, str]:
         log_handler.flush()
         return False, msg
 
-# Generate audio
+# Generate audio (Modified for unique names and directory)
 def generate_tip_audio(tip_text: str) -> Tuple[bool, Optional[str]]:
     if not tip_text or not isinstance(tip_text, str) or tip_text.startswith(("Error:", "Sorry,")):
         st.warning("⚠️ Invalid text provided. Cannot generate audio.")
         return False, None
     text_to_speak = f"Here's a water saving tip for you: {tip_text}" # Slightly more conversational
     try:
+        # Ensure directory exists
+        os.makedirs(SAVED_AUDIO_DIR, exist_ok=True)
+
+        # Generate unique filename
+        timestamp = get_timestamp_str()
+        filename = f"audio_{timestamp}.mp3"
+        full_audio_path = os.path.join(SAVED_AUDIO_DIR, filename)
+
+        # REMOVE old file removal logic - no longer needed
+
+        # Generate and save the audio
         tts = gTTS(text=text_to_speak, lang='en', slow=False)
-        if os.path.exists(AUDIO_FILENAME):
-            try:
-                os.remove(AUDIO_FILENAME)
-            except OSError as rm_err:
-                st.warning(f"Could not remove old audio file '{AUDIO_FILENAME}': {rm_err}") # More specific warning
-        tts.save(AUDIO_FILENAME)
-        return True, AUDIO_FILENAME
+        tts.save(full_audio_path) # Save using full path
+
+        logger.info(f"Successfully saved new audio file: {full_audio_path}")
+        # Return the full path for potential immediate use (like the player)
+        return True, full_audio_path
     except Exception as e:
         st.error(f"🛑 Text-to-Speech Error: {e}")
         logger.error(f"TTS Error", exc_info=True)
@@ -154,7 +186,7 @@ def generate_tip_audio(tip_text: str) -> Tuple[bool, Optional[str]]:
 
 # --- Streamlit UI Layout ---
 
-# --- Sidebar --- (Shows more detailed status)
+# --- Sidebar --- (Shows more detailed status - No change)
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3779/3779161.png", width=80) # Simple water drop icon
     st.header("Assistant Status")
@@ -186,7 +218,7 @@ with st.sidebar:
 st.title("💧 Water Conservation Assistant")
 st.markdown("Let AI help you find ways to save water! Enter a topic or question below.")
 
-# --- Display Initialization Status on Main Screen ---
+# --- Display Initialization Status on Main Screen --- (No change)
 # Use the message set during initialization
 if 'gemini_main_status_message' in st.session_state and st.session_state.gemini_main_status_message:
     if st.session_state.gemini_init_status == "success":
@@ -197,7 +229,7 @@ if 'gemini_main_status_message' in st.session_state and st.session_state.gemini_
 
 st.markdown("---") # Separator after status message
 
-# --- Input Column ---
+# --- Input Column --- (No change)
 col1, col2 = st.columns([2, 3]) # Give more space to the output column
 
 with col1:
@@ -218,7 +250,7 @@ with col1:
 
     if st.button("✨ Generate Tip using AI", key="generate_ai", disabled=gen_button_disabled, help=gen_tooltip, use_container_width=True):
         st.session_state.current_tip = "" # Clear previous tip
-        st.session_state.audio_file_path = None # Clear previous audio
+        st.session_state.audio_file_path = None # Clear previous audio playback path
         if user_prompt:
             st.session_state.processing_message = "⏳ Generating AI tip..."
             st.session_state.direct_ai_prompt = user_prompt # Store the prompt
@@ -230,7 +262,7 @@ with col1:
         st.warning("AI generation is disabled because the Gemini model could not be initialized. Please check the status messages above and in the sidebar for details.", icon="🤖")
 
 
-# --- Processing Logic Block (Handles ONLY Direct AI Generation) ---
+# --- Processing Logic Block (Handles ONLY Direct AI Generation) --- (No change)
 # (Identical to previous version - no changes needed here)
 if st.session_state.processing_message:
     # Display the processing message temporarily
@@ -291,8 +323,7 @@ if st.session_state.processing_message:
                 st.rerun()
 
 
-# --- Output Display Column ---
-# (Identical to previous version - no changes needed here)
+# --- Output Display Column --- (Modified to remove persistent display)
 with col2:
     st.subheader("💡 Your Water-Saving Tip")
     st.markdown("---")
@@ -302,49 +333,55 @@ with col2:
 
         with tip_display_area:
             if st.session_state.current_tip:
-                st.markdown(st.session_state.current_tip)
+                st.markdown(st.session_state.current_tip) # Display current AI tip
                 st.markdown("---")
+
+                # Action Buttons (No changes to button logic itself)
                 action_col1, action_col2 = st.columns(2)
 
                 with action_col1:
                     save_disabled = st.session_state.current_tip.startswith("Error:")
-                    if st.button("💾 Save Tip", key="save_tip", help="Save the current tip to a text file.", disabled=save_disabled, use_container_width=True):
+                    if st.button("💾 Save Tip", key="save_tip", help="Save the current tip to a new file.", disabled=save_disabled, use_container_width=True):
                         success, msg = save_tip_to_file(st.session_state.current_tip)
                         if success:
-                            st.success(msg, icon="💾")
+                            st.success(msg, icon="💾") # Show success, no rerun needed for this page
 
                 with action_col2:
                     audio_disabled = st.session_state.current_tip.startswith("Error:")
-                    if st.button("🔊 Generate Audio", key="generate_audio", help="Generate an audio reading of the tip.", disabled=audio_disabled, use_container_width=True):
+                    if st.button("🔊 Generate Audio", key="generate_audio", help="Generate an audio reading to a new file.", disabled=audio_disabled, use_container_width=True):
                         if st.session_state.current_tip and not audio_disabled:
                             with st.spinner("Generating audio..."):
                                 success, audio_path = generate_tip_audio(st.session_state.current_tip)
                                 if success:
+                                     # Store the full path of the *newly generated* audio
                                      st.session_state.audio_file_path = audio_path
-                                     st.success("Audio generated!", icon="🔊")
+                                     # Use os.path.basename to show just the filename in the message
+                                     st.success(f"Audio generated as '{os.path.basename(audio_path)}'!", icon="🔊")
                                      time.sleep(0.1)
-                                     st.rerun()
+                                     st.rerun() # Rerun ONLY to show the player for the new audio immediately
 
-                if st.session_state.audio_file_path and os.path.exists(st.session_state.audio_file_path):
-                    st.markdown("---")
+                # --- Display Audio Player ONLY for the *just-generated* audio ---
+                # This section now ONLY shows the audio player if one was just generated
+                # Persistent audio history will be on the other page
+                audio_display_path = st.session_state.get('audio_file_path', None) # Get path from state
+                if audio_display_path and os.path.exists(audio_display_path):
+                    st.markdown("---") # Separator before the player
+                    st.caption("🎧 Playback for newly generated audio:")
                     try:
-                        with open(st.session_state.audio_file_path, "rb") as audio_file:
+                        with open(audio_display_path, "rb") as audio_file:
                             audio_bytes = audio_file.read()
                         st.audio(audio_bytes, format='audio/mp3')
                     except Exception as e:
                         st.error(f"🛑 Error displaying audio player: {e}")
-                        logger.error(f"Audio Player Display Error", exc_info=True)
-                        log_handler.flush()
-                elif st.session_state.audio_file_path:
-                    st.warning("Audio file path exists but the file is missing. Try generating again.", icon="⚠️")
+                        logger.error(f"Audio Player Display Error", exc_info=True); log_handler.flush()
+
+                # REMOVED the expander/persistent audio display logic from this main page
+
             else:
                  st.info("Enter a topic on the left and click 'Generate Tip' to get started!", icon="👈")
 
-# --- Footer ---
-# (Identical to previous version - no changes needed here)
+# --- Footer --- (No change)
 st.markdown("---")
-# You had two caption lines here, consolidating to the one with your name
-# st.caption("Water Saver Assistant v1.1 | Powered by Streamlit and Google Gemini")
 st.caption(f"""
     © {CURRENT_YEAR} Water Saver Assistant | Made with ❤️ for Water Conservation | Designed by **Abdullah F. Al-Shehabi**
 """)
