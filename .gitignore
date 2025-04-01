@@ -1,0 +1,27 @@
+# Python virtual environment
+venv/
+*.venv/
+env/
+.env
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Log files (like yours)
+app_error.log
+*.log
+
+# Generated files (like yours)
+*.mp3
+*.txt
+
+# IDE / Editor specific files
+.idea/
+.vscode/
+
+# OS specific files
+.DS_Store
+Thumbs.db
