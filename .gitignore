@@ -25,3 +25,4 @@ app_error.log
 # OS specific files
 .DS_Store
 Thumbs.db
+!requirements.txt
