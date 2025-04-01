@@ -26,3 +26,6 @@ app_error.log
 .DS_Store
 Thumbs.db
 !requirements.txt
+
+saved_audio/
+saved_tips/
