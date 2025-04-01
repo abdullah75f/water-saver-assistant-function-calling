@@ -1,32 +1,26 @@
-# app.py (Complete Code: AI Tips, Session History, Audio, Email)
-
 import streamlit as st
 import os
-import requests  # Keep for potential future web interaction if needed
-import random  # Keep for potential future use
+import requests  
+import random  
 import google.generativeai as genai
-import datetime  # Import datetime to get current year for copyright
+import datetime  
 from gtts import gTTS
-import time  # For potential delays
-from typing import Union, List, Optional, Tuple, Dict, Any  # Typing imports
-import traceback  # Import traceback for better error logging
-import logging  # Import standard logging
-import sys  # To help ensure flushing
-import io  # Import io for handling bytes in memory
-
-# --- Email Imports ---
+import time  
+from typing import Union, List, Optional, Tuple, Dict, Any 
+import traceback  
+import logging  
+import sys  
+import io  
 import smtplib
 from email.message import EmailMessage
-import socket  # For catching connection errors
+import socket  
 
-# --- Setup Logging ---
-# (Logs errors to app_error.log)
 log_handler = logging.FileHandler('app_error.log', mode='a', encoding='utf-8')
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler.setFormatter(log_formatter)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
-if not logger.hasHandlers(): # Avoid adding handler multiple times on rerun
+if not logger.hasHandlers():
     logger.addHandler(log_handler)
 
 
@@ -133,7 +127,7 @@ def add_tip_to_session(tip_to_save: str) -> Tuple[bool, str]:
 def generate_tip_audio(tip_text: str) -> Tuple[bool, Optional[bytes]]:
     """Generates audio bytes, adds them to session history, and returns bytes for playback."""
     if not tip_text or not isinstance(tip_text, str) or tip_text.startswith(("Error:", "Sorry,")):
-        return False, None # Invalid input
+        return False, None
     text_to_speak = f"Here's a water saving tip for you: {tip_text}"
     try:
         timestamp_dt = get_timestamp_dt()
@@ -145,12 +139,12 @@ def generate_tip_audio(tip_text: str) -> Tuple[bool, Optional[bytes]]:
         audio_fp.seek(0)
         audio_bytes = audio_fp.read()
         audio_entry = {"filename": filename, "audio_bytes": audio_bytes, "timestamp": timestamp_dt}
-        st.session_state.session_saved_audio.insert(0, audio_entry) # Newest first
+        st.session_state.session_saved_audio.insert(0, audio_entry) 
         logger.info(f"Generated and added audio to session state: {filename}")
         return True, audio_bytes
     except Exception as e:
         logger.error(f"TTS Error generating audio for tip", exc_info=True); log_handler.flush()
-        return False, None # Indicate failure
+        return False, None 
 
 # --- Email Sending Function ---
 def send_tip_email(recipient_email: str, tip_content: str) -> Tuple[bool, str]:
@@ -158,9 +152,9 @@ def send_tip_email(recipient_email: str, tip_content: str) -> Tuple[bool, str]:
     # 1. Retrieve Credentials SECURELY from secrets.toml
     try:
         sender_email = st.secrets["EMAIL_SENDER_ADDRESS"]
-        sender_password = st.secrets["EMAIL_SENDER_PASSWORD"] # Use App Password here
+        sender_password = st.secrets["EMAIL_SENDER_PASSWORD"] 
         smtp_server = st.secrets["SMTP_SERVER"]
-        smtp_port = int(st.secrets["SMTP_PORT"]) # Ensure port is integer
+        smtp_port = int(st.secrets["SMTP_PORT"])
     except KeyError as e:
         msg = f"🛑 Email Setup Error: Missing '{e}' in secrets.toml. Cannot send email."
         logger.error(msg); log_handler.flush()
@@ -169,7 +163,7 @@ def send_tip_email(recipient_email: str, tip_content: str) -> Tuple[bool, str]:
          msg = "🛑 Email Setup Error: SMTP_PORT in secrets.toml must be a number."
          logger.error(msg); log_handler.flush()
          return False, msg
-    except Exception as e: # Catch other potential issues reading secrets
+    except Exception as e: 
         msg = f"🛑 Email Setup Error: Could not read email configuration: {e}"
         logger.error(msg, exc_info=True); log_handler.flush()
         return False, msg
@@ -200,11 +194,10 @@ Your Water Saver Assistant
     # 4. Send the Email via SMTP
     try:
         logger.info(f"Attempting SMTP connection: {smtp_server}:{smtp_port}")
-        # Use 'with' for automatic connection closing
-        with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server: # Added timeout
-            server.ehlo() # Identify client
-            server.starttls() # Upgrade to secure connection
-            server.ehlo() # Re-identify over TLS
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server: 
+            server.ehlo() 
+            server.starttls() 
+            server.ehlo() 
             logger.info(f"Attempting login as {sender_email}")
             server.login(sender_email, sender_password)
             logger.info(f"Sending email to {recipient_email}")
@@ -221,18 +214,17 @@ Your Water Saver Assistant
         error_msg = f"🛑 Email Sending Failed: Connection error ({smtp_server}:{smtp_port}). Check server/port and network. Details: {e}"
         logger.error(error_msg); log_handler.flush()
         return False, error_msg
-    except smtplib.SMTPException as e: # Catch other SMTP errors
+    except smtplib.SMTPException as e: 
         error_msg = f"🛑 Email Sending Failed: An SMTP error occurred: {e}"
         logger.error(error_msg, exc_info=True); log_handler.flush()
         return False, error_msg
-    except Exception as e: # Catch any other unexpected errors
+    except Exception as e: 
         error_msg = f"🛑 Email Sending Failed: An unexpected error occurred: {e}"
         logger.error(error_msg, exc_info=True); log_handler.flush()
         return False, error_msg
 
 
 # --- Streamlit UI Layout ---
-
 # --- Sidebar ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3779/3779161.png", width=80)
@@ -248,7 +240,7 @@ with st.sidebar:
     elif st.session_state.gemini_init_status == "error":
         error_msg_detail = st.session_state.get('gemini_main_status_message', "🛑 **Error:** Initialization failed.")
         st.error(error_msg_detail + "\n\nCheck `app_error.log` for details.")
-    else: # Pending
+    else: 
         st.info("⏳ Initializing Gemini Model...")
 
     st.markdown("---")
@@ -256,12 +248,12 @@ with st.sidebar:
     # Email Setup Check (Reads secrets but only displays sender email publicly)
     st.subheader("✉️ Email Setup Check")
     try:
-        sender_addr_check = st.secrets["EMAIL_SENDER_ADDRESS"] # Read value
-        st.secrets["EMAIL_SENDER_PASSWORD"] # Check presence
-        st.secrets["SMTP_SERVER"] # Check presence
-        int(st.secrets["SMTP_PORT"]) # Check if port is integer-like
+        sender_addr_check = st.secrets["EMAIL_SENDER_ADDRESS"] 
+        st.secrets["EMAIL_SENDER_PASSWORD"] 
+        st.secrets["SMTP_SERVER"] 
+        int(st.secrets["SMTP_PORT"]) 
         st.success("✅ Email secrets appear configured.")
-        # Display ONLY the sender address for user confirmation
+        
         st.caption(f"Sender: {sender_addr_check}")
     except KeyError as e:
         st.warning(f"⚠️ Email secrets missing (`{e}`). Check `.streamlit/secrets.toml`.", icon="📄")
@@ -286,15 +278,14 @@ st.markdown("Let AI help you find ways to save water! Enter a topic or question 
 if 'gemini_main_status_message' in st.session_state and st.session_state.gemini_main_status_message:
     # Show status message only once after initialization attempt
     status_msg = st.session_state.gemini_main_status_message
-    if status_msg: # Check if message exists
+    if status_msg: 
         if st.session_state.gemini_init_status == "success":
             st.success(status_msg)
         elif st.session_state.gemini_init_status == "error":
             st.error(status_msg)
-        # Clear message after showing once to avoid persistence? Optional.
-        # st.session_state.gemini_main_status_message = None
+        
 
-st.markdown("---") # Separator
+st.markdown("---") 
 
 # --- Input Column (Left) ---
 col1, col2 = st.columns([2, 3])
@@ -307,8 +298,8 @@ with col1:
         "Enter your request (e.g., 'showering', 'washing clothes', 'gardening'):",
         placeholder="Tip for washing dishes efficiently...",
         height=150,
-        key="user_ai_prompt", # Unique key for text area
-        label_visibility="collapsed" # Hide label as markdown provides it
+        key="user_ai_prompt", 
+        label_visibility="collapsed" # 
     )
 
     gen_button_disabled = st.session_state.gemini_init_status != "success"
@@ -318,12 +309,12 @@ with col1:
         # Reset relevant states for new generation
         st.session_state.current_tip = ""
         st.session_state.current_audio_bytes = None
-        st.session_state.recipient_email = "" # Clear recipient email field too
+        st.session_state.recipient_email = "" 
 
         if user_prompt:
             st.session_state.processing_message = "⏳ Generating AI tip..."
             st.session_state.direct_ai_prompt = user_prompt
-            st.rerun() # Trigger processing block and UI update
+            st.rerun() 
         else:
             st.warning("⚠️ Please enter a request or topic first.")
 
@@ -333,7 +324,6 @@ with col1:
 
 
 # --- Processing Logic Block ---
-# (This block runs only when processing_message is set, typically hidden)
 if st.session_state.processing_message:
     # Display temporary processing message
     message_placeholder = st.empty()
@@ -344,10 +334,8 @@ if st.session_state.processing_message:
         model = st.session_state.gemini_model
         if not model:
              st.error("🛑 AI Generation Error: Model not available in session state.")
-             st.session_state.current_tip = "Error: AI Model not loaded." # Set error tip
-             st.session_state.processing_message = "" # Clear processing flag
-             message_placeholder.empty() # Remove temporary message
-             # No rerun here, error shown in output column next cycle
+             st.session_state.current_tip = "Error: AI Model not loaded." 
+             st.session_state.processing_message = "" 
         else:
             try:
                 prompt_llm = st.session_state.get('direct_ai_prompt', '')
@@ -358,11 +346,10 @@ if st.session_state.processing_message:
                     response = model.generate_content(
                         full_prompt,
                          generation_config=genai.types.GenerationConfig(
-                            max_output_tokens=250, # Allow slightly longer for clarity
-                            temperature=0.7 # Balanced temperature
+                            max_output_tokens=250, 
+                            temperature=0.7 
                         ),
-                        # Consider safety settings if needed, e.g.,
-                        # safety_settings={'HARASSMENT': 'BLOCK_MEDIUM_AND_ABOVE'}
+                        
                     )
 
                 # Process the response robustly
@@ -377,20 +364,20 @@ if st.session_state.processing_message:
                     try:
                         if response.prompt_feedback and response.prompt_feedback.block_reason:
                             feedback_text = f"Blocked due to: {response.prompt_feedback.block_reason}"
-                    except Exception: pass # Ignore if attributes don't exist
+                    except Exception: pass 
                     try:
                         if response.candidates:
                              candidate = response.candidates[0]
                              if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
                                  finish_reason_val = getattr(candidate.finish_reason, 'name', str(candidate.finish_reason))
-                                 # Only show finish reason if it's not 'STOP' (normal) or 'MAX_TOKENS'
+                                
                                  if finish_reason_val not in ['STOP', 'MAX_TOKENS']:
                                      finish_reason = f"Finish Reason: {finish_reason_val}"
                              if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
                                  # Summarize safety ratings if they exist
                                  ratings_summary = ", ".join([f"{r.category.name}: {r.probability.name}" for r in candidate.safety_ratings])
                                  safety_ratings = f"Safety: [{ratings_summary}]"
-                    except Exception: pass # Ignore if structure is unexpected
+                    except Exception: pass #
 
                 # Set session state based on whether text was generated
                 if generated_text:
@@ -400,17 +387,16 @@ if st.session_state.processing_message:
                     # Construct informative error message
                     err_detail = f"{finish_reason}. {feedback_text}. {safety_ratings}"
                     st.session_state.current_tip = f"Error: Could not generate a tip for '{prompt_llm}'. The AI response was empty or blocked. ({err_detail})"
-                    st.warning(f"⚠️ AI response empty/blocked. Details: {err_detail}", icon="🤖") # Show warning in main UI too
+                    st.warning(f"⚠️ AI response empty/blocked. Details: {err_detail}", icon="🤖") 
                     logger.warning(f"AI response empty/blocked for '{prompt_llm}'. Details: {err_detail}")
 
-            except Exception as e: # Catch errors during the API call or processing
+            except Exception as e: 
                 detailed_error = traceback.format_exc()
-                st.error(f"🛑 Error during AI tip generation: {e}") # Show error in UI
+                st.error(f"🛑 Error during AI tip generation: {e}") 
                 logger.error(f"Direct AI Generation Error for prompt '{prompt_llm}':\n{detailed_error}", exc_info=False)
                 log_handler.flush()
                 st.session_state.current_tip = "Error: An exception occurred during AI generation. Please check logs."
             finally:
-                # Clear processing flags and rerun to display results in the output column
                 st.session_state.processing_message = ""
                 message_placeholder.empty()
                 st.rerun()
@@ -423,14 +409,14 @@ with col2:
 
     # Display content only if not actively processing generation
     if not st.session_state.processing_message:
-        tip_display_area = st.container() # Use container for layout if needed
+        tip_display_area = st.container() 
 
         with tip_display_area:
             current_tip = st.session_state.get('current_tip')
 
             # Display the tip if one exists (even error messages)
             if current_tip:
-                st.markdown(current_tip) # Display current AI tip or error message
+                st.markdown(current_tip) 
                 st.markdown("---")
 
                 # --- Action Buttons (History & Audio) ---
@@ -445,8 +431,8 @@ with col2:
                                  disabled=not tip_is_valid_for_actions, use_container_width=True):
                         if tip_is_valid_for_actions:
                             success, msg = add_tip_to_session(current_tip)
-                            if success: st.success(msg, icon="💾") # Show confirmation
-                            else: st.error(msg) # Show error if saving failed
+                            if success: st.success(msg, icon="💾") 
+                            else: st.error(msg) 
 
                 with action_col2:
                     # Button to generate and play audio
@@ -457,24 +443,21 @@ with col2:
                             with st.spinner("Generating audio..."):
                                 success, audio_bytes_result = generate_tip_audio(current_tip)
                             if success and audio_bytes_result:
-                                 st.session_state.current_audio_bytes = audio_bytes_result # Store for playback
-                                 # Find filename for status message
+                                 st.session_state.current_audio_bytes = audio_bytes_result 
                                  last_audio_filename = "audio clip"
-                                 if st.session_state.session_saved_audio: # Check if list has items
+                                 if st.session_state.session_saved_audio: 
                                      last_audio_filename = f"'{st.session_state.session_saved_audio[0]['filename']}'"
                                  st.success(f"Audio generated & added as {last_audio_filename}!", icon="🔊")
-                                 time.sleep(0.1) # Brief pause helpful before rerun
-                                 st.rerun() # Rerun to display the audio player below
+                                 time.sleep(0.1) 
+                                 st.rerun() 
                             else:
                                  st.error("Audio generation failed. Please try again or check logs.")
-                                 st.session_state.current_audio_bytes = None # Clear any old audio
-                                 # Optionally rerun to remove player if one was showing: st.rerun()
+                                 st.session_state.current_audio_bytes = None 
 
                 # --- Audio Player ---
-                # Display player if audio bytes exist in state for the *current* tip
                 audio_bytes_to_play = st.session_state.get('current_audio_bytes', None)
                 if audio_bytes_to_play:
-                    st.markdown("---") # Separator before player
+                    st.markdown("---") 
                     st.caption("🎧 Playback for newly generated audio:")
                     try:
                         st.audio(audio_bytes_to_play, format='audio/mp3')
@@ -483,14 +466,14 @@ with col2:
                         logger.error(f"Audio Player Display Error from Bytes", exc_info=True); log_handler.flush()
 
                 # --- Email Section ---
-                st.markdown("---") # Separator before email section
+                st.markdown("---") 
                 st.subheader("✉️ Send Tip via Email")
 
                 # Check if email secrets are okay (avoids repeating the check logic)
                 email_secrets_ok = False
-                secrets_error_msg = "" # Store potential error message
+                secrets_error_msg = "" 
                 try:
-                    st.secrets["EMAIL_SENDER_ADDRESS"] # Just check presence/access
+                    st.secrets["EMAIL_SENDER_ADDRESS"] #
                     # st.secrets["EMAIL_SENDER_PASSWORD"]
                     # st.secrets["SMTP_SERVER"]
                     int(st.secrets["SMTP_PORT"])
@@ -540,13 +523,11 @@ with col2:
                          if success:
                              st.success(msg)
                          else:
-                             st.error(msg) # Display specific error from send_tip_email function
+                             st.error(msg) 
                     else:
-                         # Warn if recipient field is empty when button is clicked
                          st.warning("⚠️ Please enter a recipient email address first.")
 
-            # Message shown initially or if current_tip is empty after generation attempt
-            elif not st.session_state.processing_message: # Avoid showing this during processing
+            elif not st.session_state.processing_message: 
                  st.info("Enter a topic on the left and click 'Generate Tip' to get started, or view history.", icon="👈")
 
 # --- Footer ---
@@ -555,8 +536,3 @@ st.caption(f"""
     © {CURRENT_YEAR} Water Saver Assistant | Made with ❤️ for Water Conservation | Designed by **Abdullah F. Al-Shehabi**
 """)
 
-# --- Reminder for Saved Content Page ---
-# The code for displaying saved content resides in:
-# pages/1_📚_Saved_Content.py
-# Ensure that file exists and uses st.session_state.session_saved_tips
-# and st.session_state.session_saved_audio to display history.

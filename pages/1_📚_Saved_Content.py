@@ -1,34 +1,21 @@
-# pages/1_📚_Saved_Content.py (Modified for reading from SESSION STATE)
-
 import streamlit as st
-# os is no longer needed for listing files here
-# import os
 import logging
-import datetime # Keep for potential display formatting
+import datetime 
 
-# --- REMOVE Filesystem Path Logic ---
-# PAGE_DIR = os.path.dirname(__file__)
-# APP_ROOT_DIR = os.path.dirname(PAGE_DIR)
-# SAVED_TIPS_DIR_NAME = "saved_tips"
-# SAVED_AUDIO_DIR_NAME = "saved_audio"
-# SAVED_TIPS_DIR = os.path.join(APP_ROOT_DIR, SAVED_TIPS_DIR_NAME)
-# SAVED_AUDIO_DIR = os.path.join(APP_ROOT_DIR, SAVED_AUDIO_DIR_NAME)
-
-# Basic logger setup for this page if needed (keep for potential errors)
 log_handler_page = logging.FileHandler('page_error.log', mode='a', encoding='utf-8')
 log_formatter_page = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler_page.setFormatter(log_formatter_page)
-logger_page = logging.getLogger(__name__) # Use __name__ for page-specific logger
+logger_page = logging.getLogger(__name__)
 logger_page.setLevel(logging.ERROR)
 if logger_page.hasHandlers(): logger_page.handlers.clear()
 logger_page.addHandler(log_handler_page)
 
 st.set_page_config(
-    page_title="Session Content History", # Updated title
+    page_title="Session Content History", 
     page_icon="💾"
 )
 
-st.title("💾 Current Session History") # Updated title
+st.title("💾 Current Session History") 
 st.markdown("---")
 st.markdown("This page displays the tips and audio generated *during this browser session*. Content will be lost when you close the browser tab.")
 
@@ -63,7 +50,7 @@ except Exception as e:
     logger_page.error("Error accessing session_saved_tips", exc_info=True); log_handler_page.flush()
 
 
-st.markdown("---") # Separator
+st.markdown("---") 
 
 # --- Display List of Saved Audio FROM SESSION STATE ---
 st.subheader("🎧 Saved Audio (This Session)")
