@@ -1,72 +1,66 @@
-# app.py (Modified for multi-file saving AND per-session storage)
+# app.py (Complete Code: AI Tips, Session History, Audio, Email)
 
 import streamlit as st
 import os
-# requests kept for potential future use
-import requests
-# random kept for potential future use
-import random
+import requests  # Keep for potential future web interaction if needed
+import random  # Keep for potential future use
 import google.generativeai as genai
-import datetime # Import datetime to get current year for copyright
+import datetime  # Import datetime to get current year for copyright
 from gtts import gTTS
-import time # For potential delays
-from typing import Union, List, Optional, Tuple, Dict, Any # Add Dict, Any
-import traceback # Import traceback for better error logging
-import logging # Import standard logging
-import sys # To help ensure flushing
-import io # Import io for handling bytes in memory
+import time  # For potential delays
+from typing import Union, List, Optional, Tuple, Dict, Any  # Typing imports
+import traceback  # Import traceback for better error logging
+import logging  # Import standard logging
+import sys  # To help ensure flushing
+import io  # Import io for handling bytes in memory
+
+# --- Email Imports ---
+import smtplib
+from email.message import EmailMessage
+import socket  # For catching connection errors
 
 # --- Setup Logging ---
+# (Logs errors to app_error.log)
 log_handler = logging.FileHandler('app_error.log', mode='a', encoding='utf-8')
 log_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 log_handler.setFormatter(log_formatter)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)
-if logger.hasHandlers():
-    logger.handlers.clear()
-logger.addHandler(log_handler)
+if not logger.hasHandlers(): # Avoid adding handler multiple times on rerun
+    logger.addHandler(log_handler)
 
 
 # --- Configuration & Constants ---
 st.set_page_config(
     page_title="💧 Water Saver Assistant",
     layout="wide",
-    initial_sidebar_state="expanded", # Keep sidebar open
+    initial_sidebar_state="expanded",
     page_icon="💧"
 )
 
-# --- Constants ---
-MODEL_NAME = 'gemini-1.5-flash-latest' # Define model name centrally
-CURRENT_YEAR = datetime.datetime.now().year # Get current year for copyright
-
-# --- REMOVE Directory Constants for Saved Content ---
-# APP_DIR = os.path.dirname(__file__)
-# SAVED_TIPS_DIR_NAME = "saved_tips"
-# SAVED_AUDIO_DIR_NAME = "saved_audio"
-# SAVED_TIPS_DIR = os.path.join(APP_DIR, SAVED_TIPS_DIR_NAME)
-# SAVED_AUDIO_DIR = os.path.join(APP_DIR, SAVED_AUDIO_DIR_NAME)
-# os.makedirs(SAVED_TIPS_DIR, exist_ok=True) # No longer needed here
-# os.makedirs(SAVED_AUDIO_DIR, exist_ok=True) # No longer needed here
-
+MODEL_NAME = 'gemini-1.5-flash-latest'  # Define model name centrally
+CURRENT_YEAR = datetime.datetime.now().year  # Get current year for copyright
 
 # --- State Initialization ---
+# (Initializes all session state variables needed)
 def init_session_state():
+    # Core app state
     if 'current_tip' not in st.session_state: st.session_state.current_tip = ""
-    # 'audio_file_path' is no longer needed for history, use bytes instead
-    # if 'audio_file_path' not in st.session_state: st.session_state.audio_file_path = None
-    if 'current_audio_bytes' not in st.session_state: st.session_state.current_audio_bytes = None # For immediate playback
+    if 'current_audio_bytes' not in st.session_state: st.session_state.current_audio_bytes = None
     if 'processing_message' not in st.session_state: st.session_state.processing_message = ""
     if 'direct_ai_prompt' not in st.session_state: st.session_state.direct_ai_prompt = ""
+    # Gemini state
     if 'gemini_model' not in st.session_state: st.session_state.gemini_model = None
-    if 'gemini_init_status' not in st.session_state: st.session_state.gemini_init_status = "pending" # pending, success, error
+    if 'gemini_init_status' not in st.session_state: st.session_state.gemini_init_status = "pending"
     if 'gemini_main_status_message' not in st.session_state: st.session_state.gemini_main_status_message = None
-
-    # --- ADD Session State Lists for History ---
-    if 'session_saved_tips' not in st.session_state: st.session_state.session_saved_tips = [] # List of dicts {'filename': str, 'content': str, 'timestamp': datetime}
-    if 'session_saved_audio' not in st.session_state: st.session_state.session_saved_audio = [] # List of dicts {'filename': str, 'audio_bytes': bytes, 'timestamp': datetime}
+    # Session history lists
+    if 'session_saved_tips' not in st.session_state: st.session_state.session_saved_tips = []
+    if 'session_saved_audio' not in st.session_state: st.session_state.session_saved_audio = []
+    # Email recipient state
+    if 'recipient_email' not in st.session_state: st.session_state.recipient_email = ""
 
 # --- Gemini Model Initialization Function ---
-# (No changes needed in initialize_gemini function itself)
+# (Handles initializing the Gemini model using API key from secrets)
 def initialize_gemini():
     if st.session_state.gemini_init_status == "success":
         st.session_state.gemini_main_status_message = f"✅ Gemini Model (`{MODEL_NAME}`) Initialized Successfully!"
@@ -75,21 +69,16 @@ def initialize_gemini():
     api_key = None
     try:
         api_key = st.secrets.get("GEMINI_API_KEY")
-        # if not api_key:
-        #     api_key = os.environ.get("GEMINI_API_KEY") # Optional fallback
-
         if not api_key:
             st.session_state.gemini_init_status = "error"
-            error_msg = "🛑 **Error:** `GEMINI_API_KEY` not found. Please configure it in Streamlit secrets."
+            error_msg = "🛑 **Error:** `GEMINI_API_KEY` not found in Streamlit secrets. AI features disabled."
             st.session_state.gemini_main_status_message = error_msg
             st.session_state.gemini_model = None
-            logger.error(error_msg)
-            log_handler.flush()
+            logger.error(error_msg); log_handler.flush()
             return
 
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(MODEL_NAME)
-
         st.session_state.gemini_model = model
         st.session_state.gemini_init_status = "success"
         success_msg = f"✅ Gemini Model (`{MODEL_NAME}`) Initialized Successfully!"
@@ -102,15 +91,15 @@ def initialize_gemini():
         st.session_state.gemini_init_status = "error"
         st.session_state.gemini_main_status_message = error_message
         st.session_state.gemini_model = None
-        logger.error(f"Gemini Initialization Error:\n{detailed_error}", exc_info=False)
-        log_handler.flush()
+        logger.error(f"Gemini Initialization Error:\n{detailed_error}", exc_info=False); log_handler.flush()
 
 # --- Run Initialization ---
 init_session_state()
+# Initialize Gemini only once if status is pending
 if st.session_state.gemini_init_status == "pending":
     initialize_gemini()
 
-# --- Core Functions --- (MODIFIED FOR SESSION STATE)
+# --- Core Utility Functions ---
 
 def get_timestamp_dt():
     """Gets the current timestamp as a datetime object."""
@@ -118,128 +107,196 @@ def get_timestamp_dt():
 
 def get_timestamp_str(dt_obj: Optional[datetime.datetime] = None) -> str:
     """Generates a sortable timestamp string from a datetime object or now."""
-    if dt_obj is None:
-        dt_obj = get_timestamp_dt()
-    # Increased precision might help avoid rare collisions on fast systems
+    if dt_obj is None: dt_obj = get_timestamp_dt()
     return dt_obj.strftime("%Y%m%d_%H%M%S_%f")
 
-# Save tip TO SESSION STATE
+# --- Tip History Function ---
 def add_tip_to_session(tip_to_save: str) -> Tuple[bool, str]:
     """Adds the given tip to the session state history list."""
     if not tip_to_save or not isinstance(tip_to_save, str) or tip_to_save.startswith(("Error:", "Sorry,")):
-        msg = "⚠️ Invalid tip provided. Cannot save to session history."
-        st.warning(msg)
-        return False, msg
+        return False, "⚠️ Invalid tip provided. Cannot save to session history."
     try:
-        # Generate unique filename FOR DISPLAY PURPOSES ONLY
         timestamp_dt = get_timestamp_dt()
         timestamp_str = get_timestamp_str(timestamp_dt)
         filename = f"tip_{timestamp_str}.txt"
-
-        # Create the dictionary entry
-        tip_entry = {
-            "filename": filename,
-            "content": tip_to_save,
-            "timestamp": timestamp_dt
-        }
-
-        # Append to session state list (insert at beginning for newest first)
-        st.session_state.session_saved_tips.insert(0, tip_entry)
-
+        tip_entry = {"filename": filename, "content": tip_to_save, "timestamp": timestamp_dt}
+        st.session_state.session_saved_tips.insert(0, tip_entry) # Newest first
         msg = f"✅ Tip added to session history as '{filename}'"
         logger.info(f"Added tip to session state: {filename}")
         return True, msg
     except Exception as e:
         msg = f"🛑 Error adding tip to session state: {e}"
-        st.error(msg)
-        logger.error(f"Add Tip to Session Error", exc_info=True)
-        log_handler.flush()
+        logger.error(f"Add Tip to Session Error", exc_info=True); log_handler.flush()
         return False, msg
 
-# Generate audio and save BYTES TO SESSION STATE, return bytes for immediate playback
+# --- Audio Generation & History Function ---
 def generate_tip_audio(tip_text: str) -> Tuple[bool, Optional[bytes]]:
-    """
-    Generates audio bytes for the tip, adds them to session state history,
-    and returns the bytes for immediate playback.
-    """
+    """Generates audio bytes, adds them to session history, and returns bytes for playback."""
     if not tip_text or not isinstance(tip_text, str) or tip_text.startswith(("Error:", "Sorry,")):
-        st.warning("⚠️ Invalid text provided. Cannot generate audio.")
-        return False, None
+        return False, None # Invalid input
     text_to_speak = f"Here's a water saving tip for you: {tip_text}"
     try:
-        # Generate unique filename FOR DISPLAY PURPOSES ONLY
         timestamp_dt = get_timestamp_dt()
         timestamp_str = get_timestamp_str(timestamp_dt)
         filename = f"audio_{timestamp_str}.mp3"
-
-        # Generate audio into memory
         tts = gTTS(text=text_to_speak, lang='en', slow=False)
         audio_fp = io.BytesIO()
         tts.write_to_fp(audio_fp)
-        audio_fp.seek(0) # Rewind the buffer
+        audio_fp.seek(0)
         audio_bytes = audio_fp.read()
-
-        # Add to session state history (insert at beginning for newest first)
-        audio_entry = {
-            "filename": filename,
-            "audio_bytes": audio_bytes,
-            "timestamp": timestamp_dt
-            # Optionally store original tip text too:
-            # "original_tip": tip_text
-        }
-        st.session_state.session_saved_audio.insert(0, audio_entry)
-
-        logger.info(f"Successfully generated and added audio to session state: {filename}")
-        # Return success and the audio bytes for immediate playback
+        audio_entry = {"filename": filename, "audio_bytes": audio_bytes, "timestamp": timestamp_dt}
+        st.session_state.session_saved_audio.insert(0, audio_entry) # Newest first
+        logger.info(f"Generated and added audio to session state: {filename}")
         return True, audio_bytes
     except Exception as e:
-        st.error(f"🛑 Text-to-Speech Error: {e}")
-        logger.error(f"TTS Error", exc_info=True)
-        log_handler.flush()
-        return False, None
+        logger.error(f"TTS Error generating audio for tip", exc_info=True); log_handler.flush()
+        return False, None # Indicate failure
+
+# --- Email Sending Function ---
+def send_tip_email(recipient_email: str, tip_content: str) -> Tuple[bool, str]:
+    """Sends the water-saving tip via email using credentials from secrets.toml."""
+    # 1. Retrieve Credentials SECURELY from secrets.toml
+    try:
+        sender_email = st.secrets["EMAIL_SENDER_ADDRESS"]
+        sender_password = st.secrets["EMAIL_SENDER_PASSWORD"] # Use App Password here
+        smtp_server = st.secrets["SMTP_SERVER"]
+        smtp_port = int(st.secrets["SMTP_PORT"]) # Ensure port is integer
+    except KeyError as e:
+        msg = f"🛑 Email Setup Error: Missing '{e}' in secrets.toml. Cannot send email."
+        logger.error(msg); log_handler.flush()
+        return False, msg
+    except (ValueError, TypeError):
+         msg = "🛑 Email Setup Error: SMTP_PORT in secrets.toml must be a number."
+         logger.error(msg); log_handler.flush()
+         return False, msg
+    except Exception as e: # Catch other potential issues reading secrets
+        msg = f"🛑 Email Setup Error: Could not read email configuration: {e}"
+        logger.error(msg, exc_info=True); log_handler.flush()
+        return False, msg
+
+    # 2. Validate Recipient Email Address (basic check)
+    if not recipient_email or "@" not in recipient_email or "." not in recipient_email.split('@')[-1]:
+        return False, "⚠️ Please enter a valid recipient email address."
+
+    # 3. Construct the Email Message
+    msg = EmailMessage()
+    msg['Subject'] = "💧 Your Water Saving Tip from the Assistant!"
+    msg['From'] = sender_email
+    msg['To'] = recipient_email
+    email_body = f"""
+Hi there,
+
+Here's the water conservation tip you requested:
+
+"{tip_content}"
+
+Keep saving water!
+
+Best regards,
+Your Water Saver Assistant
+"""
+    msg.set_content(email_body)
+
+    # 4. Send the Email via SMTP
+    try:
+        logger.info(f"Attempting SMTP connection: {smtp_server}:{smtp_port}")
+        # Use 'with' for automatic connection closing
+        with smtplib.SMTP(smtp_server, smtp_port, timeout=30) as server: # Added timeout
+            server.ehlo() # Identify client
+            server.starttls() # Upgrade to secure connection
+            server.ehlo() # Re-identify over TLS
+            logger.info(f"Attempting login as {sender_email}")
+            server.login(sender_email, sender_password)
+            logger.info(f"Sending email to {recipient_email}")
+            server.send_message(msg)
+            logger.info(f"Email successfully sent to {recipient_email}")
+        return True, f"✅ Email sent successfully to {recipient_email}!"
+
+    # Specific error handling for common SMTP issues
+    except smtplib.SMTPAuthenticationError:
+        error_msg = "🛑 Email Sending Failed: Authentication error. Check sender email/App Password in secrets.toml."
+        logger.error(error_msg); log_handler.flush()
+        return False, error_msg
+    except (socket.gaierror, smtplib.SMTPConnectError, ConnectionRefusedError, TimeoutError) as e:
+        error_msg = f"🛑 Email Sending Failed: Connection error ({smtp_server}:{smtp_port}). Check server/port and network. Details: {e}"
+        logger.error(error_msg); log_handler.flush()
+        return False, error_msg
+    except smtplib.SMTPException as e: # Catch other SMTP errors
+        error_msg = f"🛑 Email Sending Failed: An SMTP error occurred: {e}"
+        logger.error(error_msg, exc_info=True); log_handler.flush()
+        return False, error_msg
+    except Exception as e: # Catch any other unexpected errors
+        error_msg = f"🛑 Email Sending Failed: An unexpected error occurred: {e}"
+        logger.error(error_msg, exc_info=True); log_handler.flush()
+        return False, error_msg
+
 
 # --- Streamlit UI Layout ---
 
-# --- Sidebar --- (No change needed here)
+# --- Sidebar ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3779/3779161.png", width=80)
     st.header("Assistant Status")
     st.markdown("---")
+
+    # Gemini Status Display
     st.subheader("🤖 Gemini Model")
     if st.session_state.gemini_init_status == "success":
         st.success(f"✅ **Success!** Model (`{MODEL_NAME}`) loaded.")
-        try:
-            st.caption(f"google-generativeai version: `{genai.__version__}`")
-        except Exception:
-             st.caption("Could not get library version.")
+        try: st.caption(f"google-generativeai version: `{genai.__version__}`")
+        except Exception: st.caption("Could not get library version.")
     elif st.session_state.gemini_init_status == "error":
         error_msg_detail = st.session_state.get('gemini_main_status_message', "🛑 **Error:** Initialization failed.")
-        st.error(error_msg_detail + "\n\nCheck logs (`app_error.log`) for details.")
+        st.error(error_msg_detail + "\n\nCheck `app_error.log` for details.")
     else: # Pending
         st.info("⏳ Initializing Gemini Model...")
+
+    st.markdown("---")
+
+    # Email Setup Check (Reads secrets but only displays sender email publicly)
+    st.subheader("✉️ Email Setup Check")
+    try:
+        sender_addr_check = st.secrets["EMAIL_SENDER_ADDRESS"] # Read value
+        st.secrets["EMAIL_SENDER_PASSWORD"] # Check presence
+        st.secrets["SMTP_SERVER"] # Check presence
+        int(st.secrets["SMTP_PORT"]) # Check if port is integer-like
+        st.success("✅ Email secrets appear configured.")
+        # Display ONLY the sender address for user confirmation
+        st.caption(f"Sender: {sender_addr_check}")
+    except KeyError as e:
+        st.warning(f"⚠️ Email secrets missing (`{e}`). Check `.streamlit/secrets.toml`.", icon="📄")
+    except (ValueError, TypeError):
+        st.warning("⚠️ `SMTP_PORT` in secrets must be a number.", icon="📄")
+    except Exception as e:
+         st.error(f"🛑 Error checking email secrets: {e}", icon="📄")
 
     st.markdown("---")
     st.subheader("🔊 Volume Control")
     st.info("Use your computer's volume controls.")
     st.markdown("---")
+    st.caption(f"Session History: {len(st.session_state.get('session_saved_tips',[]))} Tips / {len(st.session_state.get('session_saved_audio',[]))} Audio")
     st.caption("App logs errors to `app_error.log`")
-    st.caption(f"Tips/Audio saved in this session: {len(st.session_state.get('session_saved_tips',[]))}/{len(st.session_state.get('session_saved_audio',[]))}")
 
 
 # --- Main Page ---
 st.title("💧 Water Conservation Assistant")
 st.markdown("Let AI help you find ways to save water! Enter a topic or question below.")
 
-# Display Initialization Status
+# Display Gemini Initialization Status on Main Screen
 if 'gemini_main_status_message' in st.session_state and st.session_state.gemini_main_status_message:
-    if st.session_state.gemini_init_status == "success":
-        st.success(st.session_state.gemini_main_status_message)
-    elif st.session_state.gemini_init_status == "error":
-        st.error(st.session_state.gemini_main_status_message)
+    # Show status message only once after initialization attempt
+    status_msg = st.session_state.gemini_main_status_message
+    if status_msg: # Check if message exists
+        if st.session_state.gemini_init_status == "success":
+            st.success(status_msg)
+        elif st.session_state.gemini_init_status == "error":
+            st.error(status_msg)
+        # Clear message after showing once to avoid persistence? Optional.
+        # st.session_state.gemini_main_status_message = None
 
-st.markdown("---")
+st.markdown("---") # Separator
 
-# --- Input Column ---
+# --- Input Column (Left) ---
 col1, col2 = st.columns([2, 3])
 
 with col1:
@@ -250,184 +307,256 @@ with col1:
         "Enter your request (e.g., 'showering', 'washing clothes', 'gardening'):",
         placeholder="Tip for washing dishes efficiently...",
         height=150,
-        key="user_ai_prompt",
-        label_visibility="collapsed"
+        key="user_ai_prompt", # Unique key for text area
+        label_visibility="collapsed" # Hide label as markdown provides it
     )
 
     gen_button_disabled = st.session_state.gemini_init_status != "success"
-    gen_tooltip = "Gemini model not loaded successfully." if gen_button_disabled else "Generate a water-saving tip based on your input."
+    gen_tooltip = "Gemini model not loaded successfully." if gen_button_disabled else "Generate a water-saving tip."
 
-    if st.button("✨ Generate Tip using AI", key="generate_ai", disabled=gen_button_disabled, help=gen_tooltip, use_container_width=True):
-        st.session_state.current_tip = "" # Clear previous tip
-        st.session_state.current_audio_bytes = None # Clear previous audio playback bytes
+    if st.button("✨ Generate Tip using AI", key="generate_ai_button", disabled=gen_button_disabled, help=gen_tooltip, use_container_width=True):
+        # Reset relevant states for new generation
+        st.session_state.current_tip = ""
+        st.session_state.current_audio_bytes = None
+        st.session_state.recipient_email = "" # Clear recipient email field too
+
         if user_prompt:
             st.session_state.processing_message = "⏳ Generating AI tip..."
             st.session_state.direct_ai_prompt = user_prompt
-            st.rerun()
+            st.rerun() # Trigger processing block and UI update
         else:
-            st.warning("⚠️ Please enter a request or topic for the tip.")
+            st.warning("⚠️ Please enter a request or topic first.")
 
-    if gen_button_disabled and st.session_state.gemini_init_status != 'pending':
-        st.warning("AI generation is disabled (Gemini model init failed).", icon="🤖")
+    if gen_button_disabled and st.session_state.gemini_init_status == "error":
+        # Show warning only if Gemini failed (not pending)
+        st.warning("AI generation is disabled (Gemini model initialization failed).", icon="🤖")
 
 
-# --- Processing Logic Block (Handles ONLY Direct AI Generation) ---
-# (No changes needed in this block - it sets st.session_state.current_tip)
+# --- Processing Logic Block ---
+# (This block runs only when processing_message is set, typically hidden)
 if st.session_state.processing_message:
+    # Display temporary processing message
     message_placeholder = st.empty()
     message_placeholder.info(st.session_state.processing_message, icon="⏳")
 
+    # --- Direct AI Generation ---
     if "Generating AI tip" in st.session_state.processing_message:
         model = st.session_state.gemini_model
         if not model:
-             st.error("🛑 Direct AI generation failed: Model not available.")
-             st.session_state.processing_message = ""
-             message_placeholder.empty()
-             # No rerun needed, just stop processing
+             st.error("🛑 AI Generation Error: Model not available in session state.")
+             st.session_state.current_tip = "Error: AI Model not loaded." # Set error tip
+             st.session_state.processing_message = "" # Clear processing flag
+             message_placeholder.empty() # Remove temporary message
+             # No rerun here, error shown in output column next cycle
         else:
             try:
                 prompt_llm = st.session_state.get('direct_ai_prompt', '')
-                full_prompt = f"Generate a concise and actionable water conservation tip related to: {prompt_llm}. Focus on practical advice for home use. Make it easy to understand."
+                # Construct a clear prompt for the LLM
+                full_prompt = f"Generate one concise and actionable water conservation tip related to: '{prompt_llm}'. Focus on practical advice for home use. Make it easy to understand and implement. Start directly with the tip, no introductory phrases like 'Here's a tip:'."
 
                 with st.spinner(f"Asking Gemini about '{prompt_llm}'..."):
                     response = model.generate_content(
                         full_prompt,
                          generation_config=genai.types.GenerationConfig(
-                            max_output_tokens=200, # Slightly more allowance
-                            temperature=0.75 # Slightly more creative
-                        )
-                        # Safety settings can be adjusted if needed
-                        # safety_settings={'HARASSMENT':'block_none'}
+                            max_output_tokens=250, # Allow slightly longer for clarity
+                            temperature=0.7 # Balanced temperature
+                        ),
+                        # Consider safety settings if needed, e.g.,
+                        # safety_settings={'HARASSMENT': 'BLOCK_MEDIUM_AND_ABOVE'}
                     )
 
-                # Robust check for response content
-                generated_text = ""
-                feedback_text = "Unknown reason"
-                finish_reason = "Unknown"
-                safety_ratings = "Not available"
-
+                # Process the response robustly
+                generated_text = ""; feedback_text = "Unknown"; finish_reason = "Unknown"; safety_ratings = "N/A"
                 if response:
+                    # Try getting text, handle potential blocks/errors
+                    try: generated_text = response.text.strip()
+                    except ValueError: logger.warning(f"Could not access response.text for '{prompt_llm}'. Checking feedback.")
+                    except Exception as e: logger.error(f"Unexpected error accessing response.text for '{prompt_llm}': {e}")
+
+                    # Try getting feedback/reasons if text is empty or for logging
                     try:
-                        generated_text = response.text.strip()
-                    except ValueError: # Handle case where .text might raise error (e.g. blocked prompt)
-                        generated_text = ""
-                        logger.warning(f"Could not access response.text directly for prompt '{prompt_llm}'. Checking feedback.")
-                    except Exception as e:
-                        generated_text = ""
-                        logger.error(f"Unexpected error accessing response.text for '{prompt_llm}': {e}")
-
-
-                    try:
-                        if response.prompt_feedback:
-                             feedback_text = f"Prompt Feedback: {response.prompt_feedback}"
-                    except Exception: pass # Ignore if prompt_feedback doesn't exist
-
+                        if response.prompt_feedback and response.prompt_feedback.block_reason:
+                            feedback_text = f"Blocked due to: {response.prompt_feedback.block_reason}"
+                    except Exception: pass # Ignore if attributes don't exist
                     try:
                         if response.candidates:
                              candidate = response.candidates[0]
                              if hasattr(candidate, 'finish_reason') and candidate.finish_reason:
-                                 # Access enum value if available, otherwise convert to string
                                  finish_reason_val = getattr(candidate.finish_reason, 'name', str(candidate.finish_reason))
-                                 finish_reason = f"Finish Reason: {finish_reason_val}"
+                                 # Only show finish reason if it's not 'STOP' (normal) or 'MAX_TOKENS'
+                                 if finish_reason_val not in ['STOP', 'MAX_TOKENS']:
+                                     finish_reason = f"Finish Reason: {finish_reason_val}"
                              if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
-                                 safety_ratings = f"Safety Ratings: {candidate.safety_ratings}"
-                    except Exception: pass # Ignore if candidates structure is unexpected
+                                 # Summarize safety ratings if they exist
+                                 ratings_summary = ", ".join([f"{r.category.name}: {r.probability.name}" for r in candidate.safety_ratings])
+                                 safety_ratings = f"Safety: [{ratings_summary}]"
+                    except Exception: pass # Ignore if structure is unexpected
 
-                # Decide final tip or error message
+                # Set session state based on whether text was generated
                 if generated_text:
                     st.session_state.current_tip = generated_text
-                    logger.info(f"Generated tip for '{prompt_llm}': {generated_text}")
+                    logger.info(f"Generated tip for '{prompt_llm}'.")
                 else:
-                    st.warning(f"⚠️ AI response was empty or blocked. {finish_reason}. {feedback_text}. {safety_ratings}", icon="🤖")
-                    st.session_state.current_tip = f"Error: Could not generate a tip for '{prompt_llm}'. The AI might have considered the request unsafe or couldn't produce a valid response. {finish_reason}. {feedback_text}."
-                    logger.warning(f"AI response empty/blocked for '{prompt_llm}'. {finish_reason}. {feedback_text}. {safety_ratings}")
+                    # Construct informative error message
+                    err_detail = f"{finish_reason}. {feedback_text}. {safety_ratings}"
+                    st.session_state.current_tip = f"Error: Could not generate a tip for '{prompt_llm}'. The AI response was empty or blocked. ({err_detail})"
+                    st.warning(f"⚠️ AI response empty/blocked. Details: {err_detail}", icon="🤖") # Show warning in main UI too
+                    logger.warning(f"AI response empty/blocked for '{prompt_llm}'. Details: {err_detail}")
 
-            except Exception as e:
+            except Exception as e: # Catch errors during the API call or processing
                 detailed_error = traceback.format_exc()
-                st.error(f"🛑 Error during AI tip generation: {e}")
+                st.error(f"🛑 Error during AI tip generation: {e}") # Show error in UI
                 logger.error(f"Direct AI Generation Error for prompt '{prompt_llm}':\n{detailed_error}", exc_info=False)
                 log_handler.flush()
-                st.session_state.current_tip = "Error: An exception occurred while trying to generate the tip. Please check the logs."
+                st.session_state.current_tip = "Error: An exception occurred during AI generation. Please check logs."
             finally:
+                # Clear processing flags and rerun to display results in the output column
                 st.session_state.processing_message = ""
                 message_placeholder.empty()
-                st.rerun() # Rerun to display the result
+                st.rerun()
 
 
-# --- Output Display Column --- (Modified for session state actions & byte playback)
+# --- Output Display Column (Right) ---
 with col2:
     st.subheader("💡 Your Water-Saving Tip")
     st.markdown("---")
 
+    # Display content only if not actively processing generation
     if not st.session_state.processing_message:
-        tip_display_area = st.container()
+        tip_display_area = st.container() # Use container for layout if needed
 
         with tip_display_area:
             current_tip = st.session_state.get('current_tip')
+
+            # Display the tip if one exists (even error messages)
             if current_tip:
-                st.markdown(current_tip) # Display current AI tip
+                st.markdown(current_tip) # Display current AI tip or error message
                 st.markdown("---")
 
-                # Action Buttons
+                # --- Action Buttons (History & Audio) ---
                 action_col1, action_col2 = st.columns(2)
+                # Enable actions only if the current tip is NOT an error message
+                tip_is_valid_for_actions = current_tip and not current_tip.startswith("Error:")
 
                 with action_col1:
-                    save_disabled = current_tip.startswith("Error:")
-                    # UPDATE BUTTON TEXT/HELP
-                    if st.button("💾 Add Tip to History", key="save_tip", help="Add this tip to the current session's history.", disabled=save_disabled, use_container_width=True):
-                        # CALL SESSION STATE FUNCTION
-                        success, msg = add_tip_to_session(current_tip)
-                        if success:
-                            st.success(msg, icon="💾") # Show success, no rerun needed just for adding to list
-                        else:
-                            st.error(msg) # Show error if adding failed
+                    # Button to add tip to session history
+                    if st.button("💾 Add Tip to History", key="save_tip_button",
+                                 help="Add this tip to the current session's history page.",
+                                 disabled=not tip_is_valid_for_actions, use_container_width=True):
+                        if tip_is_valid_for_actions:
+                            success, msg = add_tip_to_session(current_tip)
+                            if success: st.success(msg, icon="💾") # Show confirmation
+                            else: st.error(msg) # Show error if saving failed
 
                 with action_col2:
-                    audio_disabled = current_tip.startswith("Error:")
-                    # UPDATE BUTTON TEXT/HELP
-                    if st.button("🔊 Generate & Play Audio", key="generate_audio", help="Generate audio for this tip, play it, and add to session history.", disabled=audio_disabled, use_container_width=True):
-                        if current_tip and not audio_disabled:
+                    # Button to generate and play audio
+                    if st.button("🔊 Generate & Play Audio", key="generate_audio_button",
+                                 help="Generate audio, play it here, and add to history.",
+                                 disabled=not tip_is_valid_for_actions, use_container_width=True):
+                        if tip_is_valid_for_actions:
                             with st.spinner("Generating audio..."):
-                                # CALL MODIFIED FUNCTION
                                 success, audio_bytes_result = generate_tip_audio(current_tip)
-                                if success and audio_bytes_result:
-                                     # Store bytes for immediate playback below
-                                     st.session_state.current_audio_bytes = audio_bytes_result
-                                     # Get the filename added to history for the message
-                                     # The latest added audio is the first element in the list
-                                     if st.session_state.session_saved_audio:
-                                         last_audio_filename = st.session_state.session_saved_audio[0]['filename']
-                                         st.success(f"Audio generated and added to history as '{last_audio_filename}'!", icon="🔊")
-                                     else:
-                                         st.success("Audio generated and added to history!", icon="🔊") # Fallback message
-                                     # Slight delay might help ensure state update before potential rerun if needed
-                                     time.sleep(0.1)
-                                     # Rerun needed to display the audio player below using current_audio_bytes
-                                     st.rerun()
-                                else:
-                                     st.error("Audio generation failed.")
-                                     st.session_state.current_audio_bytes = None # Clear if failed
-                                     st.rerun() # Rerun to clear any old player
+                            if success and audio_bytes_result:
+                                 st.session_state.current_audio_bytes = audio_bytes_result # Store for playback
+                                 # Find filename for status message
+                                 last_audio_filename = "audio clip"
+                                 if st.session_state.session_saved_audio: # Check if list has items
+                                     last_audio_filename = f"'{st.session_state.session_saved_audio[0]['filename']}'"
+                                 st.success(f"Audio generated & added as {last_audio_filename}!", icon="🔊")
+                                 time.sleep(0.1) # Brief pause helpful before rerun
+                                 st.rerun() # Rerun to display the audio player below
+                            else:
+                                 st.error("Audio generation failed. Please try again or check logs.")
+                                 st.session_state.current_audio_bytes = None # Clear any old audio
+                                 # Optionally rerun to remove player if one was showing: st.rerun()
 
-
-                # --- Display Audio Player ONLY for the *just-generated* audio BYTES ---
-                # This section now uses the bytes stored in session state
+                # --- Audio Player ---
+                # Display player if audio bytes exist in state for the *current* tip
                 audio_bytes_to_play = st.session_state.get('current_audio_bytes', None)
                 if audio_bytes_to_play:
-                    st.markdown("---")
+                    st.markdown("---") # Separator before player
                     st.caption("🎧 Playback for newly generated audio:")
                     try:
                         st.audio(audio_bytes_to_play, format='audio/mp3')
                     except Exception as e:
                         st.error(f"🛑 Error displaying audio player: {e}")
                         logger.error(f"Audio Player Display Error from Bytes", exc_info=True); log_handler.flush()
-                # No persistent history display on this page
 
-            else:
-                 st.info("Enter a topic on the left and click 'Generate Tip' to get started!", icon="👈")
+                # --- Email Section ---
+                st.markdown("---") # Separator before email section
+                st.subheader("✉️ Send Tip via Email")
 
-# --- Footer --- (No change)
+                # Check if email secrets are okay (avoids repeating the check logic)
+                email_secrets_ok = False
+                secrets_error_msg = "" # Store potential error message
+                try:
+                    st.secrets["EMAIL_SENDER_ADDRESS"] # Just check presence/access
+                    # st.secrets["EMAIL_SENDER_PASSWORD"]
+                    # st.secrets["SMTP_SERVER"]
+                    int(st.secrets["SMTP_PORT"])
+                    email_secrets_ok = True
+                except KeyError as e:
+                     secrets_error_msg = f"Email disabled: Missing secret '{e}'."
+                except (ValueError, TypeError):
+                     secrets_error_msg = "Email disabled: SMTP_PORT must be a number."
+                except Exception as e:
+                     secrets_error_msg = f"Email disabled: Error checking secrets ({e})."
+
+                # Determine if email UI should be fully disabled
+                email_fully_disabled = not tip_is_valid_for_actions or not email_secrets_ok
+
+                # Show warning only if secrets are the reason for disabling
+                if not email_secrets_ok:
+                     st.warning(f"{secrets_error_msg} Check `.streamlit/secrets.toml` configuration.", icon="🔒")
+
+                # Input field for Recipient's email address
+                st.session_state.recipient_email = st.text_input(
+                    "Recipient Email:",
+                    placeholder="Enter recipient's email address" if not email_fully_disabled else ("Generate a valid tip first" if email_secrets_ok else "Email sending is not configured"),
+                    key="recipient_email_input", # Unique key
+                    value=st.session_state.recipient_email, # Use session state to preserve input
+                    disabled=email_fully_disabled,
+                    label_visibility="collapsed" # Use placeholder and subheader instead
+                )
+
+                # Determine appropriate help text for the send button
+                email_button_help = "Send the current tip via email."
+                if not email_secrets_ok:
+                    email_button_help = "Email sending is disabled due to missing/invalid configuration in secrets.toml."
+                elif not tip_is_valid_for_actions:
+                    email_button_help = "Generate a valid tip before sending via email."
+
+                # Button to trigger sending the email
+                if st.button("📧 Send Email", key="send_email_button",
+                             help=email_button_help, use_container_width=True,
+                             disabled=email_fully_disabled):
+
+                    recipient = st.session_state.recipient_email.strip() # Get and strip whitespace
+                    if recipient:
+                         # Show spinner while sending
+                         with st.spinner(f"Sending email to {recipient}..."):
+                             success, msg = send_tip_email(recipient, current_tip)
+                         # Display result message (success or error)
+                         if success:
+                             st.success(msg)
+                         else:
+                             st.error(msg) # Display specific error from send_tip_email function
+                    else:
+                         # Warn if recipient field is empty when button is clicked
+                         st.warning("⚠️ Please enter a recipient email address first.")
+
+            # Message shown initially or if current_tip is empty after generation attempt
+            elif not st.session_state.processing_message: # Avoid showing this during processing
+                 st.info("Enter a topic on the left and click 'Generate Tip' to get started, or view history.", icon="👈")
+
+# --- Footer ---
 st.markdown("---")
 st.caption(f"""
     © {CURRENT_YEAR} Water Saver Assistant | Made with ❤️ for Water Conservation | Designed by **Abdullah F. Al-Shehabi**
 """)
+
+# --- Reminder for Saved Content Page ---
+# The code for displaying saved content resides in:
+# pages/1_📚_Saved_Content.py
+# Ensure that file exists and uses st.session_state.session_saved_tips
+# and st.session_state.session_saved_audio to display history.
