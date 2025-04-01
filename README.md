@@ -6,7 +6,7 @@ An interactive web application built with Streamlit and powered by Google Gemini
 
 ## 🚀 Live Demo & Screenshots
 
-- **View Live App:** [**YOUR_DEPLOYED_APP_URL_GOES_HERE**](https://abdullah75f-water-saver-assistant-function-calling-app-pgozzl.streamlit.app/)
+- **View Live App:** [**Check it out**](https://abdullah75f-water-saver-assistant-function-calling-app-pgozzl.streamlit.app/)
 - **Main App Interface:**
   ![Main App UI](image1.png)
 - **Saved Content Page:**
