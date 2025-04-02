@@ -11,6 +11,8 @@ An interactive web application built with Streamlit and powered by Google Gemini
   ![Main App UI](image1.png)
 - **Saved Content Page:**
   ![Saved Content UI](image2.png)
+- **Function Calling Concept:**
+  ![Saved Content UI](image3.png)
 
 ## ✨ Overview
 
