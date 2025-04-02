@@ -12,7 +12,7 @@ An interactive web application built with Streamlit and powered by Google Gemini
 - **Saved Content Page:**
   ![Saved Content UI](image2.png)
 - **Function Calling Concept:**
-  ![Saved Content UI](image3.png)
+  ![Saved Content UI](image-3.png)
 
 ## ✨ Overview
 
