@@ -14,6 +14,14 @@ An interactive web application built with Streamlit and powered by Google Gemini
 - **Function Calling Concept:**
   ![Saved Content UI](image-3.png)
 
+  1- User: Asks for something needing action (e.g., "Get a tip").
+  2- App -> Gemini: Sends the request + List of available "Tools" (our functions: get_tip, save_tip, etc.).
+  3- Gemini: Analyzes request, sees it needs a tool, chooses get_tip.
+  4- Gemini -> App: Sends back a Function Call request (e.g., "Run get_tip").
+  5- App: Executes the actual get_water_conservation_tip() Python function (scrapes web).
+  6- App -> Gemini: Sends the result (the found tip) back.
+  7- Gemini -> App: Uses the result to create the final user answer ("Okay, here's a tip...").
+
 ## ✨ Overview
 
 This application provides users with actionable water-saving tips. Users can:
